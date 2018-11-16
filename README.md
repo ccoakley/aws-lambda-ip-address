@@ -54,47 +54,66 @@ source venv/bin/activate
 pip install awscli
 ```
 
+To simplify some string processing in the case of more complex domains like foo.bar.baz.net.nz,
+we're going to just ask for both the domain name and the hosted zone name in route53.
+
 ```bash
-# to simplify some string processing in the case of more complex domains like foo.bar.baz.net.nz,
-# we're going to just ask for both the domain name and the hosted zone name in route53
 domain_name='subdomain.domain.com'
 parent_domain_zone='domain.com.'
+```
 
-# Idempotency tokens are optional, but they prevent multiple certs from being generated on resubmit
+Idempotency tokens are optional, but they prevent multiple certs from being generated on resubmit.
+```bash
 idempotency_token=$(python3 -c "import uuid; print(uuid.uuid4().hex)")
 echo ${idempotency_token}
+```
 
-# request the cert
+Request the cert. Notice how close to the top of this section we are.
+```bash
 return_value=$(aws acm request-certificate --domain-name ${domain_name} --validation-method DNS --idempotency-token ${idempotency_token})
 echo ${return_value}
 certificate_arn=$(echo $return_value | python3 -c "import json, sys; print(json.load(sys.stdin)['CertificateArn'])")
 echo ${certificate_arn}
+```
 
-# this will tell us how to validate the domain
+This will tell us how to validate the domain.
+```bash
 describe_return=$(aws acm describe-certificate --certificate-arn ${certificate_arn})
 echo ${describe_return}
+```
 
-# extract the changes to DNS that AWS wishes for us to make
+Extract the changes to DNS that AWS wishes for us to make.
+```bash
 resource_record=$(echo $describe_return | python3 -c "import json, sys; print(json.dumps(json.load(sys.stdin)['Certificate']['DomainValidationOptions'][0]['ResourceRecord']))")
 echo ${resource_record}
 validate_name=$(echo ${resource_record} | python3 -c "import json, sys; print(json.load(sys.stdin)['Name'])")
 validate_value=$(echo ${resource_record} | python3 -c "import json, sys; print(json.load(sys.stdin)['Value'])")
+```
 
-# obtain the hosted zone id from the parent domain name
+Obtain the hosted zone id from the parent domain name.
+```bash
 list_zone_return=$(aws route53 list-hosted-zones-by-name --dns-name ${parent_domain_zone})
 hosted_zone_id=$(echo ${list_zone_return} | python3 -c "import json, sys; print(json.load(sys.stdin)['HostedZones'][0]['Id'])")
+```
 
-# make the change-batch file
+Make the change-batch file.
+```bash
 cat ./conf/aws/change-resource-record-sets.json | sed "s/replace_name/${validate_name}/" | sed "s/replace_value/${validate_value}/" > ./temporary-change-resource-record-sets.json
+```
 
-# create the validation entry
+Create the validation entry.
+```bash
 record_set_return=$(aws route53 change-resource-record-sets --hosted-zone-id ${hosted_zone_id} --change-batch file://./temporary-change-resource-record-sets.json)
 echo ${record_set_return}
+```
 
-# clean up that temporary file
+Clean up that temporary file.
+```bash
 rm ./temporary-change-resource-record-sets.json
+```
 
-# Wait for validation. This took about 17 minutes while I was testing this.
+Wait for validation. This took about 17 minutes while I was testing this.
+```bash
 time aws acm wait certificate-validated --certificate-arn ${certificate_arn}
 ```
 
