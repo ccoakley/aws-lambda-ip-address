@@ -98,7 +98,7 @@ hosted_zone_id=$(echo ${list_zone_return} | python3 -c "import json, sys; print(
 
 Make the change-batch file.
 ```bash
-cat ./conf/aws/change-resource-record-sets.json | sed "s/replace_name/${validate_name}/" | sed "s/replace_value/${validate_value}/" > ./temporary-change-resource-record-sets.json
+cat ./conf/aws/change-resource-record-sets.json.template | sed "s/replace_name/${validate_name}/" | sed "s/replace_value/${validate_value}/" > ./temporary-change-resource-record-sets.json
 ```
 
 Create the validation entry.
