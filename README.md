@@ -14,7 +14,7 @@ def lambda_handler(event, context):
     }
 ```
 
-This examines the event for the requesting ip address.
+This examines the event variable for the requesting ip address.
 
 The bulk of this repo is defining and deploying this lambda using API Gateway.
 
@@ -215,6 +215,104 @@ Wait for validation. This took about 17 minutes while I was testing this.
 ```bash
 time aws acm wait certificate-validated --certificate-arn ${certificate_arn}
 ```
+
+# Create IAM Policy for Lambda Role
+
+We will only need to define two shell variable to create the IAM Policy for the
+lambda function.
+
+```bash
+function_name=request-ip-lambda
+region_name=us-east-1
+```
+
+The first variable will be our lambda function name. This doesn't have to match
+anything in the code. The second variable is the AWS region name. I have chosen
+us-east-1, but you might choose a region closer to yourself. I used to work
+exclusively out of us-west-2 because it had less latency for my own usage.
+
+We will need another variable defined to fill in the policy template I have
+provided. The Account ID is part of the unique identifier that AWS associates
+with each resource inside an account. The AWS documentation recommends
+[https://docs.aws.amazon.com/IAM/latest/UserGuide/console_account-alias.html#FindingYourAWSId](visiting
+the support page to obtain your Account ID). Another way is to parse the arn of
+something in your account. If you are a user in your account, as opposed to
+having assumed a role within the account, the default for the `aws iam get-user`
+call is to return the information for the user making the call. The result has
+the Arn for that particular user. The Arn format is
+arn:aws:iam::account_id:user/username. Therefore, if we split on ":" and grab
+the 5th field, we can get the Account ID.
+
+```bash
+account_id=$(aws iam get-user | jq -r '.User.Arn' | cut -d':' -f5)
+```
+
+Now we have all of the template variables we need for the policy. Note, we could
+have used an asterisk for each of these instead. But reducing the permissions
+granted to lambdas, especially those exposed to the outside world, is
+worthwhile. In our case, the lambda function will be able to create logs (and
+log entries) in Cloudwatch. No other permissions will be granted.
+
+We apply the variables to the policy template with sed and create a temporary
+document we can upload.
+
+```bash
+cat ./conf/aws/lambda-with-logging-policy.json.template | sed "s/replace_region_name/${region_name}/g" | sed "s/replace_account_id/${account_id}/" | sed "s/replace_function_name/${function_name}" > ./temporary-lambda-with-logging-policy.json
+```
+
+Then, we create the policy.
+
+```bash
+aws iam create-policy --policy-name lambda-with-logging-policy --policy-document file://./temporary-lambda-with-logging-policy.json
+```
+
+Now we can clean up the temporary policy file.
+
+```bash
+rm ./temporary-lambda-with-logging-policy.json
+```
+
+# Create Role for Lambda
+
+Create a lambda trust role role (this allows the aws lambda service to have
+_some_ permissions in your account).
+
+```bash
+role_return=$(aws iam create-role --role-name ${role_name} --assume-role-policy-document file://../conf/aws/lambda-role-trust-policy.json)
+role_arn=$(echo ${role_return} | jq -r '.Role.Arn')
+```
+
+Now we attach the role policy that we just created from template.
+
+```bash
+aws iam attach-role-policy --role-name ${role_name} --policy-arn ${policy_arn}
+```
+
+We have now satisfied the prerequisites for our lambda.
+
+# Install Lambda Function
+
+I have provided the (very simple) python code for the lambda. We need to create
+the lambda payload for installation.
+
+```bash
+zip ./request-ip-lambda.zip aws_lambda_ip_address.py
+```
+
+Now we can create the lambda function.
+
+```bash
+aws lambda create-function --function-name ${function_name} --runtime python3.6 --role ${role_arn} --handler aws_lambda_ip_address.lambda_handler --publish --zip-file file://./request-ip-lambda.zip
+```
+
+Finally, we can delete the temporary zip payload.
+
+```bash
+rm ./request-ip-lambda.zip
+```
+
+We now have a lambda, but nothing to trigger it. Let's set up an HTTP trigger
+using API gateway, and customize the full URL with route53 and ACM.
 
 # Create DNS Entry
 ```bash
