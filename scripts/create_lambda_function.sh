@@ -19,6 +19,7 @@ rm ./temporary-lambda-with-logging-policy.json
 
 # create the role
 role_return=$(aws iam create-role --role-name ${role_name} --assume-role-policy-document file://../conf/aws/lambda-role-trust-policy.json)
+echo ${role_return}
 role_arn=$(echo ${role_return} | jq -r '.Role.Arn')
 
 # attach the role policy
