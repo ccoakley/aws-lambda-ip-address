@@ -314,6 +314,14 @@ rm ./request-ip-lambda.zip
 We now have a lambda, but nothing to trigger it. Let's set up an HTTP trigger
 using API gateway, and customize the full URL with route53 and ACM.
 
+# Create API Gateway
+
+(script documentation goes here)
+
+# Create Cognito User Pool
+
+...
+
 # Create DNS Entry
 ```bash
 aws route53 change-resource-record-sets \
