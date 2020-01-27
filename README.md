@@ -274,7 +274,7 @@ rm ./temporary-lambda-with-logging-policy.json
 
 # Create Role for Lambda
 
-Create a lambda trust role role (this allows the aws lambda service to have
+Create a lambda trust role (this allows the aws lambda service to have
 _some_ permissions in your account).
 
 ```bash
@@ -316,7 +316,81 @@ using API gateway, and customize the full URL with route53 and ACM.
 
 # Create API Gateway
 
-(script documentation goes here)
+To expose the lambda, we will use API Gateway. The first step is to create an API. The actual endpoint and association with the lambda will use this resource.
+
+```bash
+create_api_return=$(aws apigateway create-rest-api --name ${api_name} --description ${api_name} --api-key-source HEADER --endpoint-configuration REGIONAL --api-version 0.1.0)
+api_id=$(echo ${create_api_return} | jq -r '.id')
+```
+
+We are going to associate our lambda with the root path of the api. When we create an API, that resource exists by default. 
+
+```bash
+root_resource_return=$(aws apigateway get-resources --rest-api-id ${api_id})
+root_resource_id=$(echo ${root_resource_return} | jq -r '.items[0].id')
+```
+
+Our particular lambda does not modify state, but instead returns information from the request. For this reason, it is appropriate to use an HTTP GET method.
+
+```bash
+aws apigateway put-method --rest-api-id ${api_id} --resource-id ${root_resource_id} --http-method GET --authorization-type NONE --api-key-required
+```
+
+We need the ARN for our lambda for the API call that associates it with the endpoint. Fortunately, we can conveniently get that with the lambda name.
+
+```bash
+function_arn=$(aws lambda get-function --function-name ${function_name} | jq -r '.Configuration.FunctionArn')
+account_id=$(echo ${function_arn} | cut -d':' -f5)
+region_name=$(echo ${function_arn} | cut -d':' -f4)
+```
+
+Now we associate the lambda function with the other end of the call.
+
+```bash
+aws apigateway put-integration --rest-api-id ${api_id} --resource-id ${root_resource_id} --http-method AWS_PROXY --type AWS --integration-http-method POST --uri arn:aws:apigateway:${region_name}:lambda:path/2015-03-31/functions/arn:aws:lambda:${region_name}:${account_id}:function:${function_name}/invocations
+```
+
+# Associate the API with the registered domain
+
+Our script is going to need a few values. Let's get the route53 id for our domain.
+
+```bash
+zone_id=$(aws route53 list-hosted-zones-by-name --dns-name=${domain_name} --max-items=1 | jq -r '.HostedZones[0].Id')
+```
+
+Our endpoint will be access via https, so we will need the ACM cert we created earlier. Get the ARN for the ACM certificate for our domain.
+
+```bash
+cert_arn=$(aws acm list-certificates | jq -r ".CertificateSummaryList[] | select(.DomainName==\"${domain_name}\").CertificateArn")
+```
+
+Now we actually assocate the domain with our Rest API. Note the use of TLS 1.2. We have to be explicit about this. This tells AWS to serve up the endpoint on the domain name, but it doesn't do the DNS job of routing our domain to the endpoint.
+
+```bash
+domain_name_return=$(aws apigateway create-domain-name --domain-name=${domain_name} --regional-certificate-name=${domain_name} --regional-certificate-arn=${cert_arn} --security-policy=TLS_1_2 --endpoint-configuration="types=REGIONAL")
+```
+
+It is now time to create the base path mapping. Note that if you do what I am doing here, using "(none)", then this is the only API that can be served on this domain. API Gateway allows the use of multiple base-paths (e.g. v1, v2) so that multiple APIs can be served on the same domain.
+
+```bash
+path_mapping_return=$(aws apigateway create-base-path-mapping \
+    --domain-name ${domain_name} \
+    --base-path '(none)' \
+    --rest-api-id ${api_id} \
+    --stage default)
+
+regional_domain_name=$(echo ${path_mapping_return} | jq -r '.regionalDomainName')
+```
+
+Finally, we are ready to update DNS to point to the endpoint. I have included a template file for the route53 record set change using UPSERT. That allows this one call to be idempotent, but these scripts as a whole are not idempotent, so a CREATE would be just as valid here.
+
+```bash
+cat ./conf/aws/setup-dns-record.json.template | sed "s/replace_dns_fqdn/${domain_name}/g" | sed "s/replace_execute_api_dns_name/${regional_domain_name}/" | sed "s/replace_alias_hosted_zone/${alias_hosted_zone}" > ./temporary-setup-dns-record.json
+
+aws route53 change-resource-record-sets --hosted-zone-id ${zone_id} --change-batch file://./temporary-setup-dns-record.json
+
+rm ./temporary-setup-dns-record.json
+```
 
 # Create Cognito User Pool
 

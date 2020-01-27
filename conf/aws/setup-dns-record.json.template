@@ -1,13 +1,13 @@
 {
   "Changes": [
     {
-      "Action": "CREATE",
+      "Action": "UPSERT",
       "ResourceRecordSet": {
-        "Name": "{{dns_fqdn}}",
+        "Name": "replace_dns_fqdn",
         "Type": "A",
         "AliasTarget": {
-          "DNSName": "{{execute_api_dns_name}}",
-          "HostedZoneId": "{{alias_hosted_zone}}",
+          "DNSName": "replace_execute_api_dns_name",
+          "HostedZoneId": "replace_alias_hosted_zone",
           "EvaluateTargetHealth": false
         }
       }
