@@ -102,7 +102,7 @@ fi
 
 Assemble the contact values into a single shell variable. At the point this is
 interpolated, spaces will tend to break things. I have chosen a simple method to
-single-quite the "AddressLine1" value.
+single-quote the "AddressLine1" value.
 
 ```bash
 contact=FirstName=${first_name},LastName=${last_name},ContactType=${contact_type},AddressLine1="'"${address_line_1}"'",City=${city},State=${state},CountryCode=${country_code},ZipCode=${zip_code},PhoneNumber=${phone_number},Email=${email}
@@ -234,8 +234,8 @@ exclusively out of us-west-2 because it had less latency for my own usage.
 We will need another variable defined to fill in the policy template I have
 provided. The Account ID is part of the unique identifier that AWS associates
 with each resource inside an account. The AWS documentation recommends
-[https://docs.aws.amazon.com/IAM/latest/UserGuide/console_account-alias.html#FindingYourAWSId](visiting
-the support page to obtain your Account ID). Another way is to parse the arn of
+[visiting
+the support page to obtain your Account ID](https://docs.aws.amazon.com/IAM/latest/UserGuide/console_account-alias.html#FindingYourAWSId). Another way is to parse the arn of
 something in your account. If you are a user in your account, as opposed to
 having assumed a role within the account, the default for the `aws iam get-user`
 call is to return the information for the user making the call. The result has
